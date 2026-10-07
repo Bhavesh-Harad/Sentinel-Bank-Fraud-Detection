@@ -303,5 +303,10 @@ This project is built for academic and demonstration purposes.
 
 ## 👤 Author
 
-SENTINEL — AI-Powered Transaction Fraud & Risk Detection Platform  
-Built with FastAPI + PyTorch + React + SQLite
+**Bhavesh Harad**  
+📧 Email: [haradb275@gmail.com](mailto:haradb275@gmail.com)  
+🔗 GitHub: [Bhavesh-Harad](https://github.com/Bhavesh-Harad)  
+
+---
+
+*SENTINEL — AI-Powered Transaction Fraud & Risk Detection Platform*
