@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    @apply bg-slate-950 text-white antialiased;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-slate-900;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-700 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-600;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-slate-800/50 backdrop-blur-sm border border-slate-700/50 rounded-xl shadow-xl shadow-black/20;
+  }
+  .metric-card {
+    @apply bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20 hover:border-slate-700 transition-colors duration-200;
+  }
+  .risk-badge-normal {
+    @apply text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .risk-badge-suspicious {
+    @apply text-amber-400 bg-amber-400/10 border border-amber-400/30 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .risk-badge-high {
+    @apply text-orange-400 bg-orange-400/10 border border-orange-400/30 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .risk-badge-critical {
+    @apply text-red-400 bg-red-400/10 border border-red-400/30 text-xs font-semibold px-2.5 py-1 rounded-full;
+  }
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all duration-200 text-sm font-medium cursor-pointer;
+  }
+  .nav-item.active {
+    @apply text-white bg-slate-800 border border-slate-700;
+  }
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2;
+  }
+  .btn-secondary {
+    @apply bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium px-4 py-2 rounded-lg border border-slate-700 transition-all duration-200 flex items-center gap-2;
+  }
+  .input-field {
+    @apply bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors w-full;
+  }
+  .section-title {
+    @apply text-lg font-semibold text-white mb-4;
+  }
+  .chart-container {
+    @apply bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl shadow-black/20;
+  }
+}
+
+/* Dark mode styling for OpenStreetMap tiles without any external API keys */
+.dark-map-tiles {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+}

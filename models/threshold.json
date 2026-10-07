@@ -1,0 +1,6 @@
+{
+  "threshold": 0.5929641485214238,
+  "percentile": 95.0,
+  "training_samples": 755796,
+  "validation_samples": 188949
+}

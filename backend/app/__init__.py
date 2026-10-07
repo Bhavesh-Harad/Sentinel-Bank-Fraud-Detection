@@ -1,0 +1,3 @@
+"""
+SENTINEL — app package init.
+"""

@@ -1,0 +1,40 @@
+# Environment & Secrets
+.env
+*.env
+!.env.example
+
+# Python & Virtual Envs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+.npm/
+
+# Large Databases & Logs
+*.db
+*.sqlite
+*.sqlite3
+sentinel.db
+backend/sentinel.db
+*.log
+logs/
+
+# Model Binaries & Datasets (>100MB files)
+data/raw/*.csv
+data/
+*.csv
+
+# OS & IDE Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
