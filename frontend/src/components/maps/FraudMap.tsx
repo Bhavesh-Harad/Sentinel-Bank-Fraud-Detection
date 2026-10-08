@@ -54,14 +54,13 @@ export default function FraudMap({ geoPoints = [], impossibleTravel = [], height
       <MapContainer
         center={center}
         zoom={2}
-        style={{ height: '100%', width: '100%', background: '#1e293b' }}
+        style={{ height: '100%', width: '100%', background: '#0f172a' }}
         zoomControl={true}
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={20}
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          maxZoom={19}
         />
 
         <FitBounds points={geoPoints} impossibleTravel={impossibleTravel} />
