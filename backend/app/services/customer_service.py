@@ -6,6 +6,7 @@ Customer profile aggregation and lookup.
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from typing import Any, Optional
 
 from sqlalchemy import select, func
@@ -72,14 +73,92 @@ class CustomerService:
     async def get_customer_detail(
         db: AsyncSession, customer_id: str
     ) -> Optional[dict[str, Any]]:
-        """Full customer profile + recent transaction history."""
-        # Profile
+        """
+        Full customer profile with:
+        - Recent 20 transactions (for the table)
+        - spending_over_time: daily total amount grouped by transaction_date
+          across ALL historical transactions (2020-2024 dataset)
+        - hourly_distribution: count per hour-of-day (0-23) across all txns
+        - category_distribution: per merchant_category count + total amount
+        """
+        # ── Profile ──────────────────────────────────────────────────────────
         profile_q = select(CustomerProfile).where(CustomerProfile.customer_id == customer_id)
         profile = (await db.execute(profile_q)).scalar_one_or_none()
         if not profile:
             return None
 
-        # Recent transactions (last 20)
+        # ── All transactions for this customer (needed for chart aggregations) ──
+        all_txn_q = (
+            select(Transaction)
+            .where(Transaction.customer_id == customer_id)
+            .order_by(Transaction.timestamp.asc())
+        )
+        all_txn_rows = (await db.execute(all_txn_q)).scalars().all()
+
+        # ── Spending over time: daily totals from historical data ─────────────
+        # Group by transaction_date (stored as date column)
+        daily_totals: dict[str, float] = defaultdict(float)
+        daily_counts: dict[str, int] = defaultdict(int)
+        for txn in all_txn_rows:
+            if txn.transaction_date:
+                date_key = str(txn.transaction_date)  # "YYYY-MM-DD"
+            elif txn.timestamp:
+                date_key = txn.timestamp.strftime("%Y-%m-%d")
+            else:
+                continue
+            daily_totals[date_key] += float(txn.transaction_amount or 0)
+            daily_counts[date_key] += 1
+
+        spending_over_time = [
+            {"date": d, "amount": round(daily_totals[d], 2), "count": daily_counts[d]}
+            for d in sorted(daily_totals.keys())
+        ]
+
+        # ── Hourly distribution: count per hour across all transactions ───────
+        hourly: dict[int, dict] = {h: {"hour": h, "count": 0, "total_amount": 0.0} for h in range(24)}
+        for txn in all_txn_rows:
+            h = txn.hour_of_day if txn.hour_of_day is not None else (
+                txn.timestamp.hour if txn.timestamp else None
+            )
+            if h is not None and 0 <= h <= 23:
+                hourly[h]["count"] += 1
+                hourly[h]["total_amount"] += float(txn.transaction_amount or 0)
+
+        hourly_distribution = [
+            {
+                "hour": hourly[h]["hour"],
+                "count": hourly[h]["count"],
+                "avg_amount": round(
+                    hourly[h]["total_amount"] / max(hourly[h]["count"], 1), 2
+                ),
+            }
+            for h in range(24)
+        ]
+
+        # ── Category distribution ─────────────────────────────────────────────
+        cat_counts: dict[str, dict] = defaultdict(lambda: {"count": 0, "total_amount": 0.0, "fraud_count": 0})
+        for txn in all_txn_rows:
+            cat = txn.merchant_category or "Other"
+            cat_counts[cat]["count"] += 1
+            cat_counts[cat]["total_amount"] += float(txn.transaction_amount or 0)
+            if txn.is_fraud:
+                cat_counts[cat]["fraud_count"] += 1
+
+        category_distribution = sorted(
+            [
+                {
+                    "category": cat,
+                    "count": cat_counts[cat]["count"],
+                    "total_amount": round(cat_counts[cat]["total_amount"], 2),
+                    "fraud_count": cat_counts[cat]["fraud_count"],
+                }
+                for cat in cat_counts
+            ],
+            key=lambda x: x["count"],
+            reverse=True,
+        )
+
+        # ── Recent 20 transactions (for the table, most recent first) ─────────
         txn_q = (
             select(
                 Transaction,
@@ -111,6 +190,29 @@ class CustomerService:
             for r in rows
         ]
 
+        # ── Account age from transaction date range ───────────────────────────
+        account_age_days = 365  # default
+        if spending_over_time:
+            from datetime import datetime, date
+            first_date = spending_over_time[0]["date"]
+            last_date = spending_over_time[-1]["date"]
+            try:
+                d1 = datetime.strptime(first_date, "%Y-%m-%d").date()
+                d2 = datetime.strptime(last_date, "%Y-%m-%d").date()
+                account_age_days = max(1, (d2 - d1).days)
+            except Exception:
+                pass
+
+        # ── Credit score (from first transaction for this customer) ───────────
+        credit_score = 650  # default
+        if all_txn_rows:
+            credit_score = int(all_txn_rows[0].credit_score or 650)
+
+        # ── Date range label for frontend ──────────────────────────────────────
+        date_range = ""
+        if spending_over_time:
+            date_range = f"{spending_over_time[0]['date']} to {spending_over_time[-1]['date']}"
+
         return {
             "id": profile.id,
             "customer_id": profile.customer_id,
@@ -129,6 +231,14 @@ class CustomerService:
             "transactions_per_day": profile.transactions_per_day,
             "fraud_count": profile.fraud_count,
             "last_updated": profile.last_updated,
+            "credit_score": credit_score,
+            "account_age_days": account_age_days,
+            # Chart data (computed from historical DB records)
+            "spending_over_time": spending_over_time,
+            "hourly_distribution": hourly_distribution,
+            "category_distribution": category_distribution,
+            "date_range": date_range,
+            # Recent transactions for the table
             "recent_transactions": recent_txns,
         }
 

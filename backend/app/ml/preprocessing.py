@@ -177,6 +177,77 @@ CITY_COORDINATES: dict[str, tuple[float, float]] = {
     "Unknown": (0.0, 0.0),
 }
 
+# ── City → UTC offset (hours) lookup ─────────────────────────────────────────
+# These are standard/winter offsets (non-DST). For fraud detection purposes
+# this is sufficient: the key is avoiding cross-timezone comparison errors.
+CITY_TIMEZONE_OFFSET: dict[str, float] = {
+    # UK / Ireland (UTC+0 / UTC+1 BST — use standard)
+    "London": 0.0, "Manchester": 0.0, "Birmingham": 0.0, "Leeds": 0.0,
+    "Glasgow": 0.0, "Edinburgh": 0.0, "Bristol": 0.0, "Liverpool": 0.0,
+    "Sheffield": 0.0, "Cardiff": 0.0,
+    # USA Eastern (UTC-5)
+    "New York": -5.0, "NewYork": -5.0, "Philadelphia": -5.0, "Boston": -5.0,
+    "Miami": -5.0, "Atlanta": -5.0, "Detroit": -5.0,
+    # USA Central (UTC-6)
+    "Chicago": -6.0, "Houston": -6.0, "Dallas": -6.0, "San Antonio": -6.0,
+    # USA Mountain (UTC-7)
+    "Denver": -7.0, "Phoenix": -7.0,
+    # USA Pacific (UTC-8)
+    "Los Angeles": -8.0, "LosAngeles": -8.0, "San Francisco": -8.0,
+    "Seattle": -8.0, "Portland": -8.0,
+    # USA Hawaii (UTC-10)
+    "Las Vegas": -8.0,  # same tz as Pacific
+    # India (UTC+5:30)
+    "Delhi": 5.5, "Mumbai": 5.5, "Bangalore": 5.5, "Chennai": 5.5,
+    "Kolkata": 5.5, "Hyderabad": 5.5, "Pune": 5.5, "Ahmedabad": 5.5,
+    "Jaipur": 5.5, "Surat": 5.5,
+    # Japan (UTC+9)
+    "Tokyo": 9.0, "Osaka": 9.0, "Yokohama": 9.0, "Nagoya": 9.0,
+    "Sapporo": 9.0, "Kyoto": 9.0, "Kobe": 9.0, "Fukuoka": 9.0,
+    # Australia
+    "Sydney": 10.0, "Melbourne": 10.0, "Brisbane": 10.0,
+    "Adelaide": 9.5, "Perth": 8.0,
+    # Canada
+    "Toronto": -5.0, "Ottawa": -5.0, "Montreal": -5.0,
+    "Vancouver": -8.0, "Calgary": -7.0,
+    # Germany / Central Europe (UTC+1)
+    "Berlin": 1.0, "Munich": 1.0, "Hamburg": 1.0, "Frankfurt": 1.0,
+    "Cologne": 1.0, "Stuttgart": 1.0, "Dusseldorf": 1.0,
+    # France (UTC+1)
+    "Paris": 1.0, "Lyon": 1.0, "Marseille": 1.0, "Toulouse": 1.0,
+    "Nice": 1.0, "Bordeaux": 1.0, "Strasbourg": 1.0,
+    # Mexico (UTC-6)
+    "Mexico City": -6.0, "MexicoCity": -6.0, "Guadalajara": -6.0,
+    "Monterrey": -6.0, "Puebla": -6.0, "Tijuana": -8.0,
+    # Brazil (UTC-3)
+    "Sao Paulo": -3.0, "SaoPaulo": -3.0, "Rio de Janeiro": -3.0, "Rio": -3.0,
+    "Salvador": -3.0, "Brasilia": -3.0, "Fortaleza": -3.0, "Curitiba": -3.0,
+    # South Korea (UTC+9)
+    "Seoul": 9.0, "Busan": 9.0, "Incheon": 9.0, "Daegu": 9.0,
+    # China (UTC+8)
+    "Beijing": 8.0, "Shanghai": 8.0, "Guangzhou": 8.0, "Shenzhen": 8.0,
+    "Chengdu": 8.0, "Wuhan": 8.0,
+    # Singapore / SE Asia
+    "Singapore": 8.0, "Bangkok": 7.0, "Kuala Lumpur": 8.0,
+    "Jakarta": 7.0, "Manila": 8.0, "Ho Chi Minh City": 7.0,
+    # Middle East / Africa
+    "Dubai": 4.0, "Abu Dhabi": 4.0, "Riyadh": 3.0, "Istanbul": 3.0,
+    "Tel Aviv": 2.0, "Cairo": 2.0,
+    "Lagos": 1.0, "Nairobi": 3.0,
+    "Johannesburg": 2.0, "Cape Town": 2.0,
+    # South America (others)
+    "Buenos Aires": -3.0, "Lima": -5.0, "Bogota": -5.0,
+    "Santiago": -3.0, "Caracas": -4.0,
+    # Europe (others)
+    "Madrid": 1.0, "Barcelona": 1.0, "Rome": 1.0, "Milan": 1.0,
+    "Amsterdam": 1.0, "Brussels": 1.0, "Vienna": 1.0, "Zurich": 1.0,
+    "Stockholm": 1.0, "Oslo": 1.0, "Copenhagen": 1.0, "Helsinki": 2.0,
+    "Warsaw": 1.0, "Prague": 1.0, "Budapest": 1.0, "Lisbon": 0.0,
+    "Athens": 2.0,
+    # Default fallback (UTC)
+    "Unknown": 0.0,
+}
+
 # ── Feature lists ──────────────────────────────────────────────────────────────
 NUMERIC_FEATURES: list[str] = [
     "transaction_amount",
@@ -217,6 +288,49 @@ def get_city_coordinates(city: str) -> tuple[float, float]:
     # Try normalised (strip whitespace, title-case)
     normalised = city.strip().title()
     return CITY_COORDINATES.get(normalised, (0.0, 0.0))
+
+
+# ── City timezone helper ───────────────────────────────────────────────────────
+def get_city_utc_offset_hours(city: str) -> float:
+    """
+    Return the UTC offset in hours for a given city name.
+
+    Uses a static lookup (standard/winter offsets, no DST adjustment).
+    For fraud-detection purposes the ±1h DST variance is negligible compared
+    to the hours-wide gaps that constitute impossible travel.
+
+    Falls back to 0.0 (UTC) for unknown cities.
+    """
+    if city in CITY_TIMEZONE_OFFSET:
+        return CITY_TIMEZONE_OFFSET[city]
+    normalised = city.strip().title()
+    return CITY_TIMEZONE_OFFSET.get(normalised, 0.0)
+
+
+def local_timestamp_to_utc_hours(timestamp_naive, city: str) -> float:
+    """
+    Convert a naive local datetime (stored without tzinfo) for the given city
+    to a comparable UTC timestamp in seconds-since-epoch, then return as hours.
+
+    This is used to compute accurate time gaps between transactions
+    in different time zones (e.g. Mumbai IST vs New York EST).
+
+    Args:
+        timestamp_naive: datetime object without timezone info (local city time)
+        city: city name used to look up UTC offset
+
+    Returns:
+        float: UTC time expressed in fractional hours (for relative comparisons)
+    """
+    import datetime
+    if timestamp_naive is None:
+        return 0.0
+    utc_offset_hours = get_city_utc_offset_hours(city)
+    # Shift the naive local time to UTC
+    utc_dt = timestamp_naive - datetime.timedelta(hours=utc_offset_hours)
+    # Return as total hours since epoch (for diff computation)
+    epoch = datetime.datetime(1970, 1, 1)
+    return (utc_dt - epoch).total_seconds() / 3600.0
 
 
 # ── CSV loader ────────────────────────────────────────────────────────────────

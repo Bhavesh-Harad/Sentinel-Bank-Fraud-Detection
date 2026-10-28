@@ -12,7 +12,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from app.ml.preprocessing import CITY_COORDINATES, get_city_coordinates
+from app.ml.preprocessing import CITY_COORDINATES, get_city_coordinates, get_city_utc_offset_hours, local_timestamp_to_utc_hours
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +122,21 @@ class RiskEngine:
         prev_city: str,
         time_diff_hours: float,
         distance_from_home_km: Optional[float] = None,
+        current_timestamp=None,
+        prev_timestamp=None,
     ) -> tuple[float, float, float, bool, str]:
         """
         Returns (score, distance_km, speed_kmh, is_impossible_travel, explanation).
+
+        TIMEZONE-AWARE: If current_timestamp and prev_timestamp are provided as
+        naive datetime objects (stored as local city time), this method will
+        convert them to UTC using CITY_TIMEZONE_OFFSET before computing the gap.
+
+        Example:
+          Mumbai  10:00 IST (UTC+5:30) → UTC 04:30
+          NewYork 10:05 EST (UTC-5)    → UTC 15:05
+          Raw gap: 5 min  → would flag as IMPOSSIBLE TRAVEL (wrong!)
+          UTC gap: 10.5 h → correctly NOT impossible travel
         """
         # If the transaction is explicitly close to home (< 50 km) or in the same city, no geo risk
         if city and prev_city and city.strip().lower() == prev_city.strip().lower():
@@ -147,14 +159,32 @@ class RiskEngine:
             return 0.05, 0.0, 0.0, False, "City coordinates unavailable; minimal geographic risk assumed."
 
         distance_km = _haversine_km(lat1, lon1, lat2, lon2)
-        speed_kmh = distance_km / max(time_diff_hours, 1 / 60.0)  # avoid div/0
+
+        # ── Timezone-aware time gap ─────────────────────────────────────────
+        # If datetime objects are supplied, compute a UTC-corrected gap.
+        # Otherwise fall back to the caller-supplied time_diff_hours.
+        tz_note = ""
+        if current_timestamp is not None and prev_timestamp is not None:
+            curr_utc_hrs = local_timestamp_to_utc_hours(current_timestamp, city)
+            prev_utc_hrs = local_timestamp_to_utc_hours(prev_timestamp, prev_city)
+            effective_time_diff = max(abs(curr_utc_hrs - prev_utc_hrs), 1 / 60.0)
+            curr_offset = get_city_utc_offset_hours(city)
+            prev_offset = get_city_utc_offset_hours(prev_city)
+            tz_note = (
+                f" [TZ-corrected: {city} UTC{'+' if curr_offset >= 0 else ''}{curr_offset:g} → "
+                f"{prev_city} UTC{'+' if prev_offset >= 0 else ''}{prev_offset:g}]"
+            )
+        else:
+            effective_time_diff = max(time_diff_hours, 1 / 60.0)
+
+        speed_kmh = distance_km / effective_time_diff
 
         # Impossible travel requires both significant distance (>50km) and physically impossible speed
         is_impossible = (
             distance_km > RiskEngine.IMPOSSIBLE_TRAVEL_DISTANCE_KM
             and (
-                (time_diff_hours < RiskEngine.IMPOSSIBLE_TRAVEL_TIME_HOURS)
-                or (speed_kmh > RiskEngine.IMPOSSIBLE_TRAVEL_SPEED_KMPH and time_diff_hours < 4.0)
+                (effective_time_diff < RiskEngine.IMPOSSIBLE_TRAVEL_TIME_HOURS)
+                or (speed_kmh > RiskEngine.IMPOSSIBLE_TRAVEL_SPEED_KMPH and effective_time_diff < 4.0)
             )
         )
 
@@ -162,26 +192,26 @@ class RiskEngine:
             score = 1.0
             explanation = (
                 f"⚠ IMPOSSIBLE TRAVEL DETECTED: {distance_km:.0f} km from {prev_city} to {city} "
-                f"in {time_diff_hours * 60:.1f} minutes (implied speed: {speed_kmh:.0f} km/h). "
-                "Physical travel is impossible at this speed."
+                f"in {effective_time_diff * 60:.1f} minutes (implied speed: {speed_kmh:.0f} km/h). "
+                f"Physical travel is impossible at this speed.{tz_note}"
             )
         elif distance_km > 500:
-            score = 0.5 if time_diff_hours > 6.0 else 0.8
+            score = 0.5 if effective_time_diff > 6.0 else 0.8
             explanation = (
                 f"Long-distance transaction: {distance_km:.0f} km from {prev_city} to {city} "
-                f"({time_diff_hours:.1f} hours since last transaction)."
+                f"({effective_time_diff:.1f} hours since last transaction).{tz_note}"
             )
         elif distance_km > 100:
             score = min(0.4, distance_km / 1000.0)
             explanation = (
                 f"Transaction in {city} is {distance_km:.0f} km from previous location "
-                f"({prev_city}), {time_diff_hours:.1f} hours apart."
+                f"({prev_city}), {effective_time_diff:.1f} hours apart.{tz_note}"
             )
         elif city != prev_city:
             score = 0.1
             explanation = (
                 f"Transaction in {city} — different city from last transaction in {prev_city} "
-                f"({distance_km:.0f} km, {time_diff_hours:.1f} h apart)."
+                f"({distance_km:.0f} km, {effective_time_diff:.1f} h apart).{tz_note}"
             )
         else:
             score = 0.0

@@ -79,6 +79,7 @@ export interface CustomerProfile extends CustomerSummary {
   hourly_distribution: HourlyPoint[]
   category_distribution: CategoryPoint[]
   location_history: LocationPoint[]
+  date_range?: string
 }
 
 export interface SpendingPoint {

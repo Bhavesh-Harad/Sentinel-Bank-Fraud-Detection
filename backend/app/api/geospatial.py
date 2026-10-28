@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.transaction import Transaction
 from app.models.fraud_prediction import FraudPrediction
 from app.ml.risk_engine import _haversine_km
+from app.ml.preprocessing import get_city_coordinates, local_timestamp_to_utc_hours, get_city_utc_offset_hours
 
 router = APIRouter(prefix="/geospatial", tags=["Geospatial"])
 
@@ -91,10 +92,22 @@ async def get_impossible_travel(
     Identify suspicious transaction pairs where the customer appears to
     travel an impossible distance in a short time window.
 
-    For each HIGH_RISK/CRITICAL transaction, compare its city/time against
-    the customer's common city to estimate travel speed.
+    TIMEZONE-AWARE IMPLEMENTATION
+    ─────────────────────────────
+    Transaction timestamps are stored as naive local datetimes (city local time).
+    Without timezone correction, comparing Mumbai 10:00 IST (UTC+5:30) vs
+    New York 10:05 EST (UTC-5) would yield a raw diff of only 5 minutes,
+    when the true UTC gap is actually ~10.5 hours — clearly not impossible travel.
+
+    Fix: each city's naive timestamp is shifted to UTC using CITY_TIMEZONE_OFFSET
+    before the time gap is computed.
+
+    For each HIGH_RISK/CRITICAL transaction we compare:
+      - The transaction city (current location)
+      - The customer's home/common city (origin)
+    and compute the UTC-corrected time gap using time_since_last_txn_hrs as the
+    base fallback when timestamps are unavailable.
     """
-    from app.ml.preprocessing import get_city_coordinates
 
     q = (
         select(
@@ -138,9 +151,42 @@ async def get_impossible_travel(
             continue
 
         distance_km = _haversine_km(lat1, lon1, lat2, lon2)
-        time_hrs = max(float(row.time_since_last_txn_hrs or 24.0), 1 / 60.0)
+
+        # ── Timezone-aware time gap ─────────────────────────────────────────
+        # If the transaction timestamp is available we compute a timezone-corrected
+        # time gap by treating the common_city timestamp as the "previous" moment
+        # and the current transaction as the "current" moment, both shifted to UTC.
+        #
+        # Example: Mumbai 10:00 IST  → UTC 04:30
+        #          New York 10:05 EST → UTC 15:05
+        #          UTC gap = ~10.5 h  → NOT impossible travel (correct)
+        #
+        # Without TZ correction: raw gap = 5 min → INCORRECTLY flagged
+        if row.timestamp is not None:
+            # Current transaction in UTC (hours since epoch)
+            txn_utc_hrs = local_timestamp_to_utc_hours(row.timestamp, row.city)
+            # Estimate the previous timestamp from time_since_last_txn_hrs
+            # (the pre-computed elapsed hours stored in the DB, also local-time-based)
+            prev_hrs_stored = float(row.time_since_last_txn_hrs or 1.0)
+            # We reconstruct the prev local datetime and then convert it to UTC
+            # using the customer's home city offset
+            import datetime
+            prev_local_dt = row.timestamp - datetime.timedelta(hours=prev_hrs_stored)
+            prev_utc_hrs = local_timestamp_to_utc_hours(prev_local_dt, common_city)
+            # True UTC-corrected gap in hours
+            time_hrs = max(abs(txn_utc_hrs - prev_utc_hrs), 1 / 60.0)
+        else:
+            # Fallback: use the pre-stored value (less accurate but still usable)
+            time_hrs = max(float(row.time_since_last_txn_hrs or 24.0), 1 / 60.0)
+
         speed_kmh = distance_km / time_hrs
         is_impossible = speed_kmh > 900 or (distance_km > 50 and time_hrs < 0.5)
+
+        # Determine UTC offset labels for display
+        txn_city_offset = get_city_utc_offset_hours(row.city)
+        home_city_offset = get_city_utc_offset_hours(common_city)
+        tz_label_txn = f"UTC{'+' if txn_city_offset >= 0 else ''}{txn_city_offset:g}"
+        tz_label_home = f"UTC{'+' if home_city_offset >= 0 else ''}{home_city_offset:g}"
 
         results.append(
             {
@@ -167,6 +213,10 @@ async def get_impossible_travel(
                 "timestamp_2": row.timestamp.isoformat() if row.timestamp else "",
                 "risk_score": row.risk_score,
                 "risk_level": row.risk_level,
+                # Timezone metadata for frontend display
+                "timezone_city_1": tz_label_home,
+                "timezone_city_2": tz_label_txn,
+                "timezone_aware": True,
             }
         )
 

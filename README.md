@@ -94,7 +94,7 @@ Input (22 features)
 |---|---|---|
 | Autoencoder Anomaly Score | **35%** | Neural network reconstruction error |
 | Amount Deviation | **15%** | Deviation from customer's normal spending |
-| Geographic Risk | **15%** | Impossible travel detection (speed > 900 km/h) |
+| Geographic Risk | **15%** | Impossible travel detection — **timezone-aware** (speed > 900 km/h, UTC-corrected) |
 | Velocity Risk | **10%** | Too many transactions in short time window |
 | Time Anomaly | **10%** | Late-night or unusual-hour transactions |
 | Behavioral Deviation | **8%** | Differs from customer's historical patterns |
@@ -110,6 +110,35 @@ Input (22 features)
 | 31 – 60 | SUSPICIOUS | 🟡 Amber |
 | 61 – 80 | HIGH_RISK | 🟠 Orange |
 | 81 – 100 | CRITICAL | 🔴 Red |
+
+---
+
+### 🌐 Timezone-Aware Impossible Travel Detection
+
+A key challenge in global fraud detection is that **transaction timestamps are recorded in local city time**. Without timezone correction, comparing a Mumbai (IST, UTC+5:30) transaction at 10:00 to a New York (EST, UTC-5) transaction at 10:05 gives a raw time gap of only **5 minutes** — and the system would incorrectly flag this as impossible travel.
+
+**SENTINEL solves this** by maintaining a city → UTC offset lookup (`CITY_TIMEZONE_OFFSET`) for 100+ global cities and converting all naive local timestamps to UTC before computing travel speed:
+
+```
+Mumbai   10:00 IST  →  UTC 04:30  (offset: +5.5 h)
+New York 10:05 EST  →  UTC 15:05  (offset: -5 h)
+
+Raw gap:  5 min  →  ❌ False positive IMPOSSIBLE_TRAVEL
+UTC gap: 10.5 h  →  ✅ Correctly classified as legitimate travel
+```
+
+| City | Timezone | UTC Offset |
+|---|---|---|
+| Mumbai, Delhi, Bangalore | IST | UTC+5:30 |
+| New York, Toronto, Boston | EST | UTC−5 |
+| London, Manchester | GMT | UTC+0 |
+| Tokyo, Seoul, Osaka | JST/KST | UTC+9 |
+| Dubai, Abu Dhabi | GST | UTC+4 |
+| Sydney, Melbourne | AEST | UTC+10 |
+| Paris, Berlin, Rome | CET | UTC+1 |
+| Los Angeles, Seattle | PST | UTC−8 |
+
+This affects both the **Geospatial `/impossible-travel` API** and the **`RiskEngine.compute_geographic_risk()`** method — ensuring timezone-correct speed calculations platform-wide.
 
 ---
 

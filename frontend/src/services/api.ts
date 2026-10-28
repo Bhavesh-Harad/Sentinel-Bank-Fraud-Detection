@@ -295,69 +295,44 @@ export async function fetchCustomers(params: {
 }
 
 export async function fetchCustomer(id: string): Promise<CustomerProfile> {
-  try {
-    const { data } = await api.get(`/customers/${id}`)
-    const fraudCount = data.fraud_count ?? 0
-    const totalTxns = data.total_transactions ?? 1
-    const fraudRate = totalTxns > 0 ? (fraudCount / totalTxns) * 100 : 0
-    let riskProfile = 'NORMAL'
-    if (fraudCount >= 3 || fraudRate > 20) riskProfile = 'CRITICAL'
-    else if (fraudCount >= 1 || fraudRate > 5) riskProfile = 'HIGH_RISK'
-    else if (data.avg_amount > 500) riskProfile = 'SUSPICIOUS'
+  const { data } = await api.get(`/customers/${id}`)
+  const fraudCount = data.fraud_count ?? 0
+  const totalTxns = data.total_transactions ?? 1
+  const fraudRate = totalTxns > 0 ? (fraudCount / totalTxns) * 100 : 0
+  let riskProfile = 'NORMAL'
+  if (fraudCount >= 3 || fraudRate > 20) riskProfile = 'CRITICAL'
+  else if (fraudCount >= 1 || fraudRate > 5) riskProfile = 'HIGH_RISK'
+  else if ((data.avg_amount ?? 0) > 500) riskProfile = 'SUSPICIOUS'
 
-    return {
-      customer_id: data.customer_id,
-      avg_transaction_amount: data.avg_amount ?? data.avg_transaction_amount ?? 0,
-      std_transaction_amount: data.std_amount ?? data.std_transaction_amount ?? 0,
-      total_transactions: totalTxns,
-      fraud_count: fraudCount,
-      fraud_rate: fraudRate,
-      common_city: data.common_city ?? 'Unknown',
-      common_category: data.common_merchant_category ?? 'General',
-      common_payment_method: data.common_payment_method ?? 'Card',
-      typical_hours: data.typical_hours ?? (data.avg_hour ? `${Math.round(data.avg_hour)}:00` : '10-18'),
-      avg_daily_transactions: data.transactions_per_day ?? 1,
-      account_age_days: data.account_age_days ?? 365,
-      credit_score: data.credit_score ?? 650,
-      risk_profile: data.risk_profile ?? riskProfile,
-      transactions: (data.recent_transactions || []).map((t: any) => ({
-        ...t,
-        risk_level: t.risk_level ?? 'NORMAL',
-        amount: t.amount ?? t.transaction_amount ?? 0,
-      })),
-      spending_over_time: data.spending_over_time || [],
-      hourly_distribution: data.hourly_distribution || [],
-      category_distribution: data.category_distribution || [],
-      location_history: data.location_history || [],
-    }
-  } catch {
-    const base = (await fetchCustomers()).customers.find(c => c.customer_id === id) ?? (await fetchCustomers()).customers[0]
-    const spending: any[] = []
-    for (let i = 29; i >= 0; i--) {
-      spending.push({ date: new Date(Date.now() - i * 86400000).toISOString().split('T')[0], amount: Math.random() * 500 + 50, count: Math.floor(Math.random() * 5) + 1 })
-    }
-    return {
-      ...base,
-      transactions: MOCK_TRANSACTIONS.filter(t => t.customer_id === id).concat(MOCK_TRANSACTIONS.slice(0, 3)),
-      spending_over_time: spending,
-      hourly_distribution: Array.from({ length: 24 }, (_, h) => ({ hour: h, count: Math.floor(Math.random() * 30) + 1, avg_amount: Math.random() * 200 + 50 })),
-      category_distribution: [
-        { category: 'Grocery', count: 120, total_amount: 4800, fraud_count: 0 },
-        { category: 'Restaurant', count: 89, total_amount: 6700, fraud_count: 0 },
-        { category: 'Gas Station', count: 45, total_amount: 2200, fraud_count: 0 },
-        { category: 'Online Shopping', count: 67, total_amount: 12400, fraud_count: 1 },
-        { category: 'ATM Withdrawal', count: 34, total_amount: 8500, fraud_count: 1 },
-        { category: 'Crypto Exchange', count: 12, total_amount: 48000, fraud_count: 3 },
-      ],
-      location_history: [
-        { city: 'Mumbai', country: 'India', count: 450, lat: 19.0760, lng: 72.8777 },
-        { city: 'Delhi', country: 'India', count: 120, lat: 28.6139, lng: 77.2090 },
-        { city: 'Bangalore', country: 'India', count: 67, lat: 12.9716, lng: 77.5946 },
-        { city: 'Tokyo', country: 'Japan', count: 2, lat: 35.6762, lng: 139.6503 },
-      ],
-    }
+  return {
+    customer_id: data.customer_id,
+    avg_transaction_amount: data.avg_amount ?? data.avg_transaction_amount ?? 0,
+    std_transaction_amount: data.std_amount ?? data.std_transaction_amount ?? 0,
+    total_transactions: totalTxns,
+    fraud_count: fraudCount,
+    fraud_rate: fraudRate,
+    common_city: data.common_city ?? 'Unknown',
+    common_category: data.common_merchant_category ?? 'General',
+    common_payment_method: data.common_payment_method ?? 'Card',
+    typical_hours: data.typical_hours ?? (data.avg_hour != null ? `${Math.round(data.avg_hour)}:00` : '10-18'),
+    avg_daily_transactions: data.transactions_per_day ?? 1,
+    account_age_days: data.account_age_days ?? 365,
+    credit_score: data.credit_score ?? 650,
+    risk_profile: data.risk_profile ?? riskProfile,
+    // Chart data — computed from real historical DB transactions
+    transactions: (data.recent_transactions || []).map((t: any) => ({
+      ...t,
+      risk_level: t.risk_level ?? 'NORMAL',
+      amount: t.amount ?? t.transaction_amount ?? 0,
+    })),
+    spending_over_time: data.spending_over_time || [],
+    hourly_distribution: data.hourly_distribution || [],
+    category_distribution: data.category_distribution || [],
+    location_history: data.location_history || [],
+    date_range: data.date_range || '',
   }
 }
+
 
 export async function fetchAlerts(params: { limit?: number } = {}): Promise<Alert[]> {
   try {
